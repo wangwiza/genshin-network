@@ -1,23 +1,19 @@
-from definitions import ROOT_DIR, DATA_DIR
-import os
+from definitions import DATA_DIR, DUMP_URL
+from pathlib import Path
 import requests
 import py7zr
 from tqdm import tqdm
 
-DUMP_URL = (
-    "https://s3.amazonaws.com/wikia_xml_dumps/g/ge/gensinimpact_pages_current.xml.7z"
-)
 
-
-def download_file(url) -> str:
+def download_file(url: Path) -> str:
     response = requests.get(url, stream=True)
-    filename = os.path.join(DATA_DIR, os.path.basename(DUMP_URL))
+    filename = DATA_DIR / url.name
     response.raise_for_status()
     with tqdm.wrapattr(
         open(filename, "wb"),
         "write",
         miniters=1,
-        desc=os.path.basename(filename),
+        desc=filename.name,
         total=int(response.headers.get("content-length", 0)),
     ) as fout:
         for chunk in response.iter_content(chunk_size=8192):

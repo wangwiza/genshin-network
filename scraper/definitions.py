@@ -1,4 +1,6 @@
-import os
+from pathlib import Path
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(ROOT_DIR, "data")
+ROOT_DIR = Path(__file__).parent.parent
+DATA_DIR = ROOT_DIR / 'data'
+DUMP_URL = Path("https://s3.amazonaws.com/wikia_xml_dumps/g/ge/gensinimpact_pages_current.xml.7z")
+XML_FILE = DUMP_URL.stem
