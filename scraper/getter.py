@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 def download_file(url: Path) -> str:
     response = requests.get(url, stream=True)
-    filename = DATA_DIR / url.name
+    filename = DATA_DIR / url.split("/")[-1]
     response.raise_for_status()
     with tqdm.wrapattr(
         open(filename, "wb"),
