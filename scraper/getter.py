@@ -8,6 +8,7 @@ from tqdm import tqdm
 def download_file(url: str) -> Path:
     response = requests.get(url, stream=True)
     filename = DATA_DIR / url.split("/")[-1]
+    Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
     response.raise_for_status()
     with tqdm.wrapattr(
         open(filename, "wb"),

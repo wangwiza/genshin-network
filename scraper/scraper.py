@@ -22,21 +22,20 @@ def extract_all_characters(soup: BeautifulSoup):
                 f.write(f"{character_name}\n")
 
 
-def extract_all_dialogue(soup: BeautifulSoup):
-    with open(f"{DATA_DIR}/dialogues.txt", "w", encoding="utf8") as f:
-        for elem in soup(text=re.compile(r"{{Dialogue Start}}")):
-            conversations = re.findall(
-                r"{{Dialogue Start}}(.+?){{Dialogue End}}", elem.text, re.DOTALL
-            )
-            for exchange in conversations:
-                f.write(html.unescape(exchange))
-
-
 def extract_all_dialogue_new():
     with open(f"{DATA_DIR}/{XML_FILE}", "r", encoding="utf8") as xml:
         with open(f"{DATA_DIR}/dialogues.txt", "w", encoding="utf8") as f:
+            isDialogue = False
             for line in xml:
-                print(line)
+                if "{{Dialogue End}}" in line:
+                    f.write("\n")
+                    isDialogue = False
+                elif "{{Dialogue Start}}" in line:
+                    isDialogue = True
+                elif isDialogue:
+                    f.write(html.unescape(line))
+                else:
+                    pass
             print("done.")
 
 
@@ -49,6 +48,4 @@ def clean_dialogues():
 
 
 if __name__ == "__main__":
-    # soup = get_genshin_soup()
-    # extract_all_dialogue(soup)
     extract_all_dialogue_new()
