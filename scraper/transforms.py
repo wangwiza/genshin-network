@@ -1,8 +1,14 @@
+import spacy
+import json
+from definitions import DATA_DIR
+from spacy.tokens import Doc
 from definitions import DATA_DIR, XML_FILE
 
+from bs4 import BeautifulSoup
 import pandas as pd
 import re
 import html
+import os
 
 
 def extract_all_dialogue_alt() -> str:
@@ -98,7 +104,24 @@ def clean_dialogue_line(line: str) -> str:
     return clean_line
 
 
-if __name__ == "__main__":
-    extract_all_dialogue_alt()
-    # soup = get_genshin_soup()
-    # extract_all_titles(soup)
+def count_character_exchanges_in_dialogues():
+    # Load English tokenizer, tagger, parser and NER
+    nlp = spacy.load("en_core_web_trf")
+    exchanges = {}
+    with open(f"{DATA_DIR}/dialogues.txt", encoding="utf8") as dialogues:
+        for line in dialogues:
+            if not line.strip():
+                continue
+            doc = nlp(line)
+            if not doc.ents:
+                continue
+            speaker = doc.ents[0].text
+            if speaker not in exchanges:
+                exchanges[speaker] = {}
+            for entity in doc.ents[1:]:
+                if entity.label_ == "PERSON":
+                    exchanges[speaker][entity.text] = (
+                        exchanges[speaker].get(entity.text, 0) + 1
+                    )
+    with open(f"{DATA_DIR}/exchanges.json", "w", encoding="utf8") as f:
+        json.dump(exchanges, f, indent=4)
