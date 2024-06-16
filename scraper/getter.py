@@ -6,6 +6,15 @@ from tqdm import tqdm
 
 
 def download_file(url: str) -> Path:
+    """Download a file from the given URL and save it to the data directory.
+
+    Args:
+        url (str): The URL of the file to download.
+
+    Returns:
+        The path to the downloaded file.
+    """
+
     response = requests.get(url, stream=True)
     filename = DATA_DIR / url.split("/")[-1]
     Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
@@ -23,6 +32,12 @@ def download_file(url: str) -> Path:
 
 
 def extract_7z_file(filename):
+    """Extract a 7z file to the data directory.
+
+    Args:
+        filename (Path): The path to the 7z file.
+    """
+
     with py7zr.SevenZipFile(filename, "r") as archive:
         print(f"Starting extraction of {filename}...")
         archive.extractall(DATA_DIR)
