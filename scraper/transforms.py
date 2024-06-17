@@ -1,79 +1,68 @@
 import spacy
 import json
-from definitions import DATA_DIR
-from spacy.tokens import Doc
 from definitions import DATA_DIR, XML_FILE
-
-from bs4 import BeautifulSoup
-import pandas as pd
+from tqdm import tqdm
+import os
 import re
 import html
-import os
+
+dialogue_pattern = re.compile(
+    r"""
+^:+             # Starts with one or more colons
+(
+    \{\{DIcon.*?\}\}.* |    # Matches {{DIcon}} followed by the rest of the text till newline
+    (?:\{\{.*?\}\}\ )?      # Matches optional voice tag {{ }}
+    '''[^:]+:''' .*       # Matches '''Name:''' where Name can be any characters name
+)
+""",
+    re.VERBOSE,
+)
+
+ref_pattern = re.compile(r"<ref.*?>.*?</ref>|<ref.*?/>")
+comment_pattern = re.compile(r"<!--.*?-->")
+rubi_pattern = re.compile(r"{{rubi\|(.*?)\|(.*?)}}", re.IGNORECASE)
+w_pattern = re.compile(r"{{w.*\|([^}]*)}}", re.IGNORECASE)
+tt_pattern = re.compile(r"{{tt.*\|([^}]*)}}", re.IGNORECASE)
+actor_pattern = re.compile(r".*(?:played|voiced) by (\w+ \w+|\w+)", re.IGNORECASE)
+color_pattern = re.compile(r"{{color.*\|([^}]*)}}", re.IGNORECASE)
+not_a_typo = re.compile(r"{{not a typo\|(.+?)}}", re.IGNORECASE)
+ifeq_pattern = re.compile(r"{{#ifeq:.*\|([^}]*)}}(<!--)?", re.IGNORECASE)
+mc_pattern = re.compile(r"{{mc\|((m=)?([^\|}]*))\|.*}}", re.IGNORECASE)
+sic_pattern = re.compile(r"{{sic\|([^|}]+).*}}", re.IGNORECASE)
+ll_pattern = re.compile(r"{{ll\|([^|}]+)\|([^|}]+)}}", re.IGNORECASE)
+transclude_pattern = re.compile(r"{{Transclude.*?}}", re.IGNORECASE)
+obf_pattern = re.compile(r"{{obf\|([^|}]+)}}", re.IGNORECASE)
 
 
-def extract_all_dialogue_alt() -> str:
-    """Extract all dialogue from the XML file and save it to a text file."""
-
-    with open(f"{DATA_DIR}/{XML_FILE}", "r", encoding="utf8") as src, open(
-        f"{DATA_DIR}/dialogues.txt", "w", encoding="utf8"
-    ) as dst:
-        isDialogue = False
-        skipping = False
-        for line in src:
-            if "<title>" in line:
-                skipping = any(x in line for x in ("User:", "File:", "Template:"))
-                continue
-            if skipping:
-                continue
-            if "{{Dialogue End}}" in line:
-                dst.write("\n")
-                isDialogue = False
-            elif "{{Dialogue Start}}" in line:
-                isDialogue = True
-            elif isDialogue:
-                dst.write(clean_dialogue_line(line))
-            else:
-                pass
-        print("done.")
-    return f"{DATA_DIR}/dialogues.txt"
-
-
-def extract_all_dialogue() -> str:
+def pick_character_dialogues_from_raw() -> int:
     """Extract all dialogue from the XML file and save it to a text file.
 
     Returns:
         str: The path to the saved dialogue text file.
     """
 
-    # Corrected regular expression pattern
-    dialogue_pattern = re.compile(
-        r"""
-    ^:+             # Starts with one or more colons
-    (
-        {{DIcon.*?}}.* |    # Matches {{DIcon}} followed by the rest of the text till newline
-        (?:{{.*?}}\ )?      # Matches optional voice tag {{ }}
-        '''[^:]+:''' .*       # Matches '''Name:''' where Name can be any characters name
-    )
-    """,
-        re.VERBOSE,
-    )
-
     try:
-        with open(f"{DATA_DIR}/{XML_FILE}", "r", encoding="utf8") as src, open(
-            f"{DATA_DIR}/dialogues.txt", "w", encoding="utf8"
-        ) as dst:
-            for line in src:
-                if dialogue_pattern.match(line):
-                    dst.write(clean_dialogue_line(line))
+        print("Extracting dialogues from XML file...")
+        with tqdm(total=os.path.getsize(f"{DATA_DIR}/{XML_FILE}")) as pbar:
+            with open(f"{DATA_DIR}/{XML_FILE}", "r", encoding="utf8") as src, open(
+                f"{DATA_DIR}/dialogues.txt", "w", encoding="utf8"
+            ) as dst:
+                line_count = 0
+                for line in tqdm(src):
+                    pbar.update(len(line))
+                    if dialogue_pattern.match(line):
+                        dst.write(clean_dialogue_line(line))
+                        # dst.write(line)
+                        line_count += 1
         print("Dialogue extraction complete.")
-        return f"{DATA_DIR}/dialogues.txt"
 
     except FileNotFoundError:
         print(f"File not found: {DATA_DIR}/{XML_FILE}")
-        return ""
+
     except Exception as e:
         print(f"An error occurred: {e}")
-        return ""
+
+    return line_count
 
 
 def clean_dialogue_line(line: str) -> str:
@@ -86,42 +75,96 @@ def clean_dialogue_line(line: str) -> str:
         The cleaned line of dialogue.
     """
 
-    line = line.replace("{{MC|Lumine|Aether|mc=1}}", "Lumine").replace(
-        "{{MC|m=Aether|f=Lumine}}", "Aether"
-    )
+    line = html.unescape(html.unescape(html.unescape(line)))
+
+    # Replace DIcon with Aether
     if "{{DIcon" in line:
         start = line.find("}}") + 2
-        line_without_prefix = f"Aether: {line[start:]}"
+        line = f"Aether:{line[start:]}"
     else:
-        line_without_prefix = line[line.find("'''") :]
-    unescaped_line = html.unescape(html.unescape(html.unescape(line_without_prefix)))
-    clean_line = (
-        unescaped_line.replace("'''", "")
+        line = line[line.find("'''") :]
+
+    line = line.replace("Traveler's Sibling", "Lumine")
+    line = line.replace("(Traveler)", "Aether")
+
+    line = ref_pattern.sub(r"", line)
+    line = comment_pattern.sub(r"", line)
+    line = rubi_pattern.sub(r"\1 (\2)", line)
+    line = w_pattern.sub(r"\1", line)
+    line = color_pattern.sub(r"\1", line)
+    line = not_a_typo.sub(r"\1", line)
+    line = ifeq_pattern.sub(r"\1", line)
+    line = mc_pattern.sub(r"\3", line)
+    line = sic_pattern.sub(r"\1", line)
+    line = ll_pattern.sub(r"\1\2", line)
+    line = transclude_pattern.sub(r"", line)
+    line = obf_pattern.sub(r"\1", line)
+
+    def replace_tt(m):
+        if actor_pattern.match(m.group(1)):
+            return actor_pattern.sub(r"\1", m.group(1))
+        return m.group(1)
+
+    line = tt_pattern.sub(replace_tt, line)
+
+    # Final cleanup
+    line = line.replace("{{Dialogue End}}", "").replace("{{sic}}", "")
+    line = (
+        line.replace("'''", "")
         .replace("[[", "")
         .replace("]]", "")
-        .replace("|", ", ")
+        .replace("{{", "")
+        .replace("}}", "")
     )
-    return clean_line
+    return line
 
 
-def count_character_exchanges_in_dialogues():
+def count_character_exchanges_in_dialogues(line_count: int):
     # Load English tokenizer, tagger, parser and NER
+    print("Loading spaCy model...")
     nlp = spacy.load("en_core_web_trf")
+    print("Model loaded.")
+    print("Counting character exchanges in dialogues...")
     exchanges = {}
+    with tqdm(total=line_count) as pbar:
+        with open(f"{DATA_DIR}/dialogues.txt", encoding="utf8") as dialogues:
+            for line in dialogues:
+                pbar.update(1)
+                if not line.strip():
+                    continue
+                separation_index = line.find(":")
+                speaker = line[:separation_index]
+                if speaker not in exchanges:
+                    exchanges[speaker] = {}
+                doc = nlp(line[separation_index + 1 :])
+                if not doc.ents:
+                    continue
+                for entity in doc.ents:
+                    if entity.label_ == "PERSON":
+                        if entity.text not in exchanges[speaker]:
+                            exchanges[speaker][entity.text] = 1
+                        else:
+                            exchanges[speaker][entity.text] += 1
+    with open(f"{DATA_DIR}/exchanges.json", "w", encoding="utf8") as f:
+        print("Dumping exchanges to JSON file...")
+        json.dump(exchanges, f, indent=4)
+        print("Exchanges counted and saved to exchanges.json.")
+
+
+def find_all_tags():
+    pattern = re.compile(r"{{.*?}}")
+    unique_tags = set()
     with open(f"{DATA_DIR}/dialogues.txt", encoding="utf8") as dialogues:
         for line in dialogues:
-            if not line.strip():
-                continue
-            doc = nlp(line)
-            if not doc.ents:
-                continue
-            speaker = doc.ents[0].text
-            if speaker not in exchanges:
-                exchanges[speaker] = {}
-            for entity in doc.ents[1:]:
-                if entity.label_ == "PERSON":
-                    exchanges[speaker][entity.text] = (
-                        exchanges[speaker].get(entity.text, 0) + 1
-                    )
-    with open(f"{DATA_DIR}/exchanges.json", "w", encoding="utf8") as f:
-        json.dump(exchanges, f, indent=4)
+            tags = pattern.findall(line)
+            for tag in tags:
+                unique_tags.add(tag)
+    with open("tags.txt", "w", encoding="utf8") as f:
+        for tag in unique_tags:
+            f.write(f"{tag}\n")
+    print(unique_tags)
+
+
+if __name__ == "__main__":
+    line_count = pick_character_dialogues_from_raw()
+    count_character_exchanges_in_dialogues(line_count)
