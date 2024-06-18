@@ -1,3 +1,4 @@
+from numpy import square
 import spacy
 import json
 from definitions import DATA_DIR, XML_FILE
@@ -5,6 +6,7 @@ from tqdm import tqdm
 import os
 import re
 import html
+import csv
 
 dialogue_pattern = re.compile(
     r"""
@@ -27,11 +29,12 @@ actor_pattern = re.compile(r".*(?:played|voiced) by (\w+ \w+|\w+)", re.IGNORECAS
 color_pattern = re.compile(r"{{color.*\|([^}]*)}}", re.IGNORECASE)
 not_a_typo = re.compile(r"{{not a typo\|(.+?)}}", re.IGNORECASE)
 ifeq_pattern = re.compile(r"{{#ifeq:.*\|([^}]*)}}(<!--)?", re.IGNORECASE)
-mc_pattern = re.compile(r"{{mc\|((m=)?([^\|}]*))\|.*}}", re.IGNORECASE)
+mc_pattern = re.compile(r"{{mc\|((m=)?([^\|}]*))\|[^}]*}}", re.IGNORECASE)
 sic_pattern = re.compile(r"{{sic\|([^|}]+).*}}", re.IGNORECASE)
 ll_pattern = re.compile(r"{{ll\|([^|}]+)\|([^|}]+)}}", re.IGNORECASE)
 transclude_pattern = re.compile(r"{{Transclude.*?}}", re.IGNORECASE)
 obf_pattern = re.compile(r"{{obf\|([^|}]+)}}", re.IGNORECASE)
+square_brackets_pattern = re.compile(r"\[\[([^\]]*)\|(.*?)\]\]")
 
 
 def pick_character_dialogues_from_raw() -> int:
@@ -89,16 +92,17 @@ def clean_dialogue_line(line: str) -> str:
 
     line = ref_pattern.sub(r"", line)
     line = comment_pattern.sub(r"", line)
+    line = mc_pattern.sub(r"\3", line)
     line = rubi_pattern.sub(r"\1 (\2)", line)
     line = w_pattern.sub(r"\1", line)
     line = color_pattern.sub(r"\1", line)
     line = not_a_typo.sub(r"\1", line)
     line = ifeq_pattern.sub(r"\1", line)
-    line = mc_pattern.sub(r"\3", line)
     line = sic_pattern.sub(r"\1", line)
     line = ll_pattern.sub(r"\1\2", line)
     line = transclude_pattern.sub(r"", line)
     line = obf_pattern.sub(r"\1", line)
+    line = square_brackets_pattern.sub(r"\2 (\1)", line)
 
     def replace_tt(m):
         if actor_pattern.match(m.group(1)):
@@ -126,29 +130,61 @@ def count_character_exchanges_in_dialogues(line_count: int):
     print("Model loaded.")
     print("Counting character exchanges in dialogues...")
     exchanges = {}
-    with tqdm(total=line_count) as pbar:
-        with open(f"{DATA_DIR}/dialogues.txt", encoding="utf8") as dialogues:
-            for line in dialogues:
-                pbar.update(1)
-                if not line.strip():
-                    continue
-                separation_index = line.find(":")
-                speaker = line[:separation_index]
-                if speaker not in exchanges:
-                    exchanges[speaker] = {}
-                doc = nlp(line[separation_index + 1 :])
-                if not doc.ents:
-                    continue
-                for entity in doc.ents:
-                    if entity.label_ == "PERSON":
-                        if entity.text not in exchanges[speaker]:
-                            exchanges[speaker][entity.text] = 1
-                        else:
-                            exchanges[speaker][entity.text] += 1
+    with (
+        tqdm(total=line_count) as pbar,
+        open(f"{DATA_DIR}/dialogues.txt", encoding="utf8") as dialogues,
+    ):
+        for line in dialogues:
+            pbar.update(1)
+            if not line.strip():
+                continue
+            separation_index = line.find(":")
+            speaker = line[:separation_index]
+            if speaker not in exchanges:
+                exchanges[speaker] = {}
+            doc = nlp(line[separation_index + 1 :])
+            if not doc.ents:
+                continue
+            for entity in doc.ents:
+                if entity.label_ == "PERSON":
+                    if entity.text not in exchanges[speaker]:
+                        exchanges[speaker][entity.text] = 1
+                    else:
+                        exchanges[speaker][entity.text] += 1
     with open(f"{DATA_DIR}/exchanges.json", "w", encoding="utf8") as f:
         print("Dumping exchanges to JSON file...")
         json.dump(exchanges, f, indent=4)
         print("Exchanges counted and saved to exchanges.json.")
+
+
+def count_character_mentions_in_dialogues(line_count: int):
+    # Load English tokenizer, tagger, parser and NER
+    print("Loading spaCy model...")
+    nlp = spacy.load("en_core_web_trf")
+    print("Model loaded.")
+    print("Counting character exchanges in dialogues...")
+    with (
+        tqdm(total=line_count) as pbar,
+        open(f"{DATA_DIR}/dialogues.txt", encoding="utf8") as dialogues,
+        open(
+            f"{DATA_DIR}/exchanges.csv", mode="w", newline="", encoding="utf8"
+        ) as fout,
+    ):
+        psv_writer = csv.writer(fout, delimiter="|")
+        psv_writer.writerow(("source", "target"))
+        for line in dialogues:
+            pbar.update(1)
+            if not line.strip():
+                continue
+            separation_index = line.find(":")
+            speaker = line[:separation_index]
+            doc = nlp(line[separation_index + 1 :])
+            if not doc.ents:
+                continue
+            for entity in doc.ents:
+                if entity.label_ == "PERSON":
+                    psv_writer.writerow((speaker, entity.text))
+    print("Exchanges counted and saved to exchanges.csv.")
 
 
 def find_all_tags():
@@ -167,4 +203,4 @@ def find_all_tags():
 
 if __name__ == "__main__":
     line_count = pick_character_dialogues_from_raw()
-    count_character_exchanges_in_dialogues(line_count)
+    count_character_mentions_in_dialogues(line_count)
