@@ -54,7 +54,7 @@ def draw_pyvis_graph(G: nx.Graph):
     nx.set_node_attributes(G, node_degree, "size")
 
     net.from_nx(G)
-    net.show("../visuals/genshin_dialogue_graph.html")
+    net.show("../index.html")
 
 
 def normalize_values(d, new_min=1, new_max=100):
